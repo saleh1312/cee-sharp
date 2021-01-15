@@ -1,0 +1,283 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Diagnostics;
+using System.Threading;
+
+namespace WindowsFormsApp8
+{
+    class proc_obj
+    {
+        public string name;
+        public bool is_exist;
+        public float ram;
+        public float cpu;
+
+
+        public proc_obj(string _name, bool _i, float _r, float _c, int ind = 90, int ind2 = 100)
+        {
+            name = _name;
+            is_exist = _i;
+            ram = _r;
+            cpu = _c;
+
+
+        }
+    }
+    public partial class Form1 : Form
+    {
+        // for track ram and cpu
+        PerformanceCounter ramc;
+        PerformanceCounter cpuc;
+
+
+        // track ram and cpu usage for process
+        PerformanceCounter ramp;
+        PerformanceCounter cpup;
+
+        Thread childThread;
+
+        int pcount;
+        bool isfinish = true;
+        List<proc_obj> current_process;
+
+        public Form1()
+        {
+            InitializeComponent();
+            this.FormClosing += Form1_FormClosing;
+            ramc = new PerformanceCounter();
+            ramc.CategoryName = "Memory";
+            ramc.CounterName = "% Committed Bytes In Use";
+            ramc.InstanceName = "";
+
+            current_process = new List<proc_obj>();
+            pcount = Environment.ProcessorCount;
+
+            cpuc = new PerformanceCounter();
+            cpuc.CategoryName = "Processor";
+            cpuc.CounterName = "% Processor Time";
+            cpuc.InstanceName = "_total";
+
+
+            ramp = new PerformanceCounter();
+            ramp.CategoryName = "Process";
+            ramp.CounterName = "Working Set - Private";
+            ramp.InstanceName = "";
+
+            cpup = new PerformanceCounter();
+            cpup.CategoryName = "Process";
+            cpup.CounterName = "% Processor Time";
+            cpup.InstanceName = "";
+
+
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            float ramusage = ramc.NextValue();
+            circle2.Text = string.Format("{0:0.0}%", ramusage);
+            circle2.Value = (int)ramusage;
+
+
+
+
+
+            float cpuusage = cpuc.NextValue();
+            circle1.Text = string.Format("{0:0.0}%", cpuusage);
+            circle1.Value = (int)cpuusage;
+
+        }
+    
+        
+        public List<float> extract_data(string name)
+        {
+            List<float> data = new List<float>();
+            
+            ramp.InstanceName = name;
+            cpup.InstanceName = name;
+
+            try
+            {
+            
+                float ramamount = (float)((ramp.NextValue() / 1024 / 1024));
+                data.Add(ramamount);
+            }catch(Exception ex)
+            {
+                data.Add(0);
+            }
+            
+
+            // cpu usage
+
+            try
+            {
+                float n = (int)Math.Round(cpup.NextValue() / pcount, 2);
+                Thread.Sleep(10);
+             
+                n = (float)Math.Round(cpup.NextValue() / pcount, 2);
+                data.Add(n);
+            }
+            catch(Exception ex)
+            {
+                data.Add(0);
+            }
+            
+
+
+
+
+            return data;
+
+        }
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            childThread.Abort();
+        }
+        public void lala()
+        {
+            isfinish = false;
+            CheckForIllegalCrossThreadCalls = false;
+
+            PerformanceCounterCategory perf = new PerformanceCounterCategory("Process");
+            var processCollection = perf.GetInstanceNames();
+
+            List<proc_obj> new_process = new List<proc_obj>();
+
+           
+            
+            foreach (var np in processCollection)
+            {
+                if (!(np.StartsWith("fdm") || np.StartsWith("notepad") || np.StartsWith("vlc")
+                     || np.StartsWith("calc")))
+                {
+                    continue;
+                }
+                var data = extract_data(np);
+                proc_obj p = new proc_obj(np,false,data[0],data[1]);
+
+                new_process.Add(p);
+            }
+
+            foreach (var cp in current_process)
+            {
+                cp.is_exist = false;
+                foreach(var np in new_process)
+                {
+                  
+                    if (np.name == cp.name)
+                    {
+                        cp.is_exist = true;
+                        np.is_exist = true;
+                 
+                        cp.ram = np.ram;
+                        cp.cpu = np.cpu;
+                    
+                        
+                        break;
+                    }
+                }
+            }
+
+            //label all process that finished
+            foreach (var cp in current_process)
+            {
+                if (cp.is_exist == false)
+                {
+                    cp.name = "none_in_currect_process [finished] "; // any label
+                }
+                ;
+                
+            }
+
+            // label all process that finished in listview
+            for (int i =0;i<listView1.Items.Count;i++)
+            {
+                string namee = listView1.Items[i].Text;
+
+                bool e = false;
+                foreach(var pro in current_process)
+                {
+                    if(namee == pro.name)
+                    {
+
+                        listView1.Items[i].SubItems[1].Text = pro.ram.ToString();
+                        listView1.Items[i].SubItems[2].Text = pro.cpu.ToString();
+                        e = true;
+                 
+                        break;
+                       
+                    }
+                }
+                if(e==false)
+                {
+                    listView1.Items[i].Text = "none_in_list_view"; // any label
+                    listView1.Items[i].SubItems[1].Text = "";
+                    listView1.Items[i].SubItems[2].Text = "";
+                }
+            }
+       
+            //clean listview
+            while (listView1.Items.Count!=0)
+            {
+                bool cleaned = true;
+                for (int i = 0; i < listView1.Items.Count; i++)
+                {
+                    if (listView1.Items[i].Text == "none_in_list_view")
+                    {
+                        listView1.Items.RemoveAt(i);
+                        cleaned = false;
+                        break;
+
+
+                    }
+                }
+                if(cleaned)
+                {
+                    break;
+                }
+            }
+       
+            //add the new process to list view and current process
+            foreach(var np in new_process)
+            {
+                if(!np.is_exist)
+                {
+                   
+                    current_process.Add(np);
+                    ListViewItem item = new ListViewItem(np.name);
+                    item.SubItems.Add(np.ram.ToString());
+                    item.SubItems.Add(np.cpu.ToString());
+
+                    listView1.Items.Add(item);
+                }
+            }
+
+
+            isfinish = true;
+        
+    }
+        private void timer2_Tick(object sender, EventArgs e)
+        {
+            if(isfinish==true)
+            {
+                ThreadStart childref = new ThreadStart(lala);
+                childThread = new Thread(childref);
+                childThread.Start();
+            }
+ 
+            
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+        
+
+        }
+    }
+}
